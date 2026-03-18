@@ -1,0 +1,104 @@
+version: "2"
+run:
+  tests: true
+linters:
+  enable:
+    - bodyclose
+    - dogsled
+    - dupl
+    - exhaustive
+    - gochecknoinits
+    - goconst
+    - gocritic
+    - gocyclo
+    - gosec
+    - misspell
+    - nakedret
+    - prealloc
+    - staticcheck
+    - unconvert
+    - unparam
+    - whitespace
+  settings:
+    dogsled:
+      max-blank-identifiers: 2
+    dupl:
+      threshold: 100
+    errcheck:
+      check-type-assertions: true
+      check-blank: true
+    exhaustive:
+      default-signifies-exhaustive: false
+    goconst:
+      min-len: 2
+      min-occurrences: 2
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+    gocyclo:
+      min-complexity: 15
+    govet:
+      enable:
+        - shadow
+    misspell:
+      locale: US
+    nakedret:
+      max-func-lines: 30
+    prealloc:
+      simple: true
+      range-loops: true
+      for-loops: false
+    unparam:
+      check-exported: false
+  exclusions:
+    generated: lax
+    rules:
+      - linters:
+          - dupl
+          - errcheck
+          - goconst
+          - gocyclo
+          - gosec
+        path: _test\.go
+      - linters:
+          - gocyclo
+        path: main\.go
+        text: cyclomatic complexity
+      - linters:
+          - gosec
+        text: G304|G306|G204|G703
+      - linters:
+          - gocritic
+        text: ifElseChain
+    paths:
+      - vendor
+      - .git
+      - .github
+      - third_party$
+      - builtin$
+      - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    gofmt:
+      simplify: true
+    goimports:
+      local-prefixes: github.com/shivase/pdf-to-markdown
+  exclusions:
+    generated: lax
+    paths:
+      - vendor
+      - .git
+      - .github
+      - third_party$
+      - builtin$
+      - examples$

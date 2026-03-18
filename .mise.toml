@@ -1,0 +1,90 @@
+# mise configuration for pdf-to-markdown
+[tools]
+go = "1.26"
+
+[tasks.build]
+description = "Build the binary for current platform"
+run = """
+mkdir -p build
+go build -o build/pdf-to-markdown .
+echo "✅ Build complete: build/pdf-to-markdown"
+"""
+
+[tasks.dev]
+description = "Development build with race detector"
+run = """
+mkdir -p build
+go build -race -o build/pdf-to-markdown .
+echo "✅ Development build complete (with race detector): build/pdf-to-markdown"
+"""
+
+[tasks.clean]
+description = "Remove build artifacts"
+run = """
+rm -rf build
+echo "🧹 Cleaned build artifacts"
+"""
+
+[tasks.install]
+description = "Install to /usr/local/bin"
+depends = ["build"]
+run = """
+sudo cp build/pdf-to-markdown /usr/local/bin/
+sudo chmod +x /usr/local/bin/pdf-to-markdown
+echo "✅ Installed to /usr/local/bin/pdf-to-markdown"
+"""
+
+[tasks.test]
+description = "Run tests"
+run = "go test -v ./..."
+
+[tasks.test-coverage]
+description = "Run tests with coverage report"
+run = """
+go test -coverprofile=coverage.out ./...
+go tool cover -html=coverage.out -o coverage.html
+echo "📊 Coverage report: coverage.html"
+"""
+
+[tasks.fmt]
+description = "Format Go code"
+run = """
+go fmt ./...
+echo "✨ Code formatted"
+"""
+
+[tasks.lint]
+description = "Lint Go code"
+run = """
+if command -v golangci-lint >/dev/null 2>&1; then
+  golangci-lint run
+elif command -v docker >/dev/null 2>&1; then
+  echo "⚠️ golangci-lint not found, using Docker..."
+  docker run --rm -v $(pwd):/app -w /app golangci/golangci-lint:v2.8.0 golangci-lint run
+else
+  echo "⚠️ golangci-lint and Docker not installed, using go vet instead"
+  go vet ./...
+fi
+"""
+
+[tasks.check-all]
+description = "Run all checks (test, lint, fmt)"
+depends = ["test", "lint", "fmt"]
+
+[tasks.mod-update]
+description = "Update Go modules"
+run = """
+go mod tidy
+go mod download
+echo "📦 Go modules updated"
+"""
+
+[tasks.run]
+description = "Run the application (requires PDF_INPUT and PDF_OUTPUT env vars)"
+run = """
+go run . ${PDF_INPUT} ${PDF_OUTPUT}
+"""
+
+[tasks.help]
+description = "Show available tasks"
+run = "mise tasks"
