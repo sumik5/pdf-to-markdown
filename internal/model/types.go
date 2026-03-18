@@ -1,8 +1,6 @@
 // Package model defines shared data types for the PDF to Markdown converter.
 package model
 
-import "strings"
-
 // LineType represents the type of a text line.
 type LineType int
 
@@ -17,29 +15,12 @@ const (
 	LineTypeNumbered
 )
 
-// TextItem represents an individual text element extracted from a PDF.
-type TextItem struct {
-	Text     string
-	X        float64
-	Y        float64
-	Width    float64
-	FontName string
-	FontSize float64
-}
-
-// IsBold returns true if the font name indicates bold styling.
-func (t TextItem) IsBold() bool {
-	return strings.Contains(strings.ToLower(t.FontName), "bold")
-}
-
-// Line represents text items grouped into a single visual line.
+// Line represents a single visual line of text from the PDF.
 type Line struct {
-	Items        []TextItem
-	Y            float64
+	Text         string
 	IndentLevel  int
 	Type         LineType
 	HeadingLevel int
-	Text         string
 }
 
 // Page represents a single PDF page with its extracted lines.

@@ -6,96 +6,142 @@ import (
 	"github.com/shivase/pdf-to-markdown/internal/model"
 )
 
-func TestHeadingLevel(t *testing.T) {
+func TestDetectHeadingsFromOutline(t *testing.T) {
 	tests := []struct {
-		name string
-		line model.Line
-		want int
+		name      string
+		lines     []model.Line
+		outline   []model.OutlineItem
+		wantTypes []model.LineType
+		wantLevels []int
 	}{
 		{
-			name: "empty line",
-			line: model.Line{},
-			want: 0,
+			name:      "no outline, normal text unchanged",
+			lines:     []model.Line{{Text: "Hello world"}},
+			outline:   []model.OutlineItem{{Title: "Introduction"}},
+			wantTypes: []model.LineType{model.LineTypeNormal},
+			wantLevels: []int{0},
 		},
 		{
-			name: "normal text (12pt)",
-			line: model.Line{
-				Items: []model.TextItem{{FontSize: 12, FontName: "Helvetica"}},
-				Text:  "Normal text here",
+			name:  "exact match - h1",
+			lines: []model.Line{{Text: "Introduction"}},
+			outline: []model.OutlineItem{
+				{Title: "Introduction"},
 			},
-			want: 0,
+			wantTypes:  []model.LineType{model.LineTypeHeading},
+			wantLevels: []int{1},
 		},
 		{
-			name: "h1 - large font (>20pt)",
-			line: model.Line{
-				Items: []model.TextItem{{FontSize: 24, FontName: "Times-Roman"}},
-				Text:  "Big heading",
+			name:  "case insensitive match",
+			lines: []model.Line{{Text: "introduction"}},
+			outline: []model.OutlineItem{
+				{Title: "Introduction"},
 			},
-			want: 1,
+			wantTypes:  []model.LineType{model.LineTypeHeading},
+			wantLevels: []int{1},
 		},
 		{
-			name: "h1 - bold 17pt",
-			line: model.Line{
-				Items: []model.TextItem{{FontSize: 17, FontName: "Helvetica-Bold"}},
-				Text:  "Bold heading",
+			name:  "contains match (page number appended)",
+			lines: []model.Line{{Text: "Chapter 1: Background 5"}},
+			outline: []model.OutlineItem{
+				{Title: "Chapter 1: Background"},
 			},
-			want: 1,
+			wantTypes:  []model.LineType{model.LineTypeHeading},
+			wantLevels: []int{1},
 		},
 		{
-			name: "h2 - 17pt regular",
-			line: model.Line{
-				Items: []model.TextItem{{FontSize: 17, FontName: "Times-Roman"}},
-				Text:  "Subheading",
+			name:  "nested outline - depth 1 becomes h2",
+			lines: []model.Line{{Text: "Section 1.1"}},
+			outline: []model.OutlineItem{
+				{
+					Title: "Chapter 1",
+					Children: []model.OutlineItem{
+						{Title: "Section 1.1"},
+					},
+				},
 			},
-			want: 2,
+			wantTypes:  []model.LineType{model.LineTypeHeading},
+			wantLevels: []int{2},
 		},
 		{
-			name: "h2 - bold 15pt",
-			line: model.Line{
-				Items: []model.TextItem{{FontSize: 15, FontName: "Times-Bold"}},
-				Text:  "Subheading bold",
+			name:  "deep nesting capped at h3",
+			lines: []model.Line{{Text: "Deep Section"}},
+			outline: []model.OutlineItem{
+				{
+					Title: "Ch1",
+					Children: []model.OutlineItem{
+						{
+							Title: "Sub1",
+							Children: []model.OutlineItem{
+								{
+									Title: "Sub1.1",
+									Children: []model.OutlineItem{
+										{Title: "Deep Section"},
+									},
+								},
+							},
+						},
+					},
+				},
 			},
-			want: 2,
+			wantTypes:  []model.LineType{model.LineTypeHeading},
+			wantLevels: []int{3},
 		},
 		{
-			name: "h3 - 15pt regular",
-			line: model.Line{
-				Items: []model.TextItem{{FontSize: 15, FontName: "Times-Roman"}},
-				Text:  "Small heading",
+			name:  "no duplicate match (used flag)",
+			lines: []model.Line{{Text: "Introduction"}, {Text: "Introduction"}},
+			outline: []model.OutlineItem{
+				{Title: "Introduction"},
 			},
-			want: 3,
+			wantTypes:  []model.LineType{model.LineTypeHeading, model.LineTypeNormal},
+			wantLevels: []int{1, 0},
 		},
 		{
-			name: "h3 - bold 13pt",
-			line: model.Line{
-				Items: []model.TextItem{{FontSize: 13, FontName: "Helvetica-Bold"}},
-				Text:  "Small bold",
-			},
-			want: 3,
+			name:    "fallback ALL CAPS when outline empty",
+			lines:   []model.Line{{Text: "CHAPTER ONE"}},
+			outline: nil,
+			wantTypes:  []model.LineType{model.LineTypeHeading},
+			wantLevels: []int{3},
 		},
 		{
-			name: "h3 - all caps short",
-			line: model.Line{
-				Items: []model.TextItem{{FontSize: 12, FontName: "Helvetica"}},
-				Text:  "INTRODUCTION",
-			},
-			want: 3,
+			name:    "fallback ALL CAPS too long - not heading",
+			lines:   []model.Line{{Text: "THIS IS A VERY LONG ALL CAPS LINE THAT EXCEEDS EIGHTY CHARACTERS IN TOTAL LENGTH HERE"}},
+			outline: nil,
+			wantTypes:  []model.LineType{model.LineTypeNormal},
+			wantLevels: []int{0},
 		},
 		{
-			name: "not h3 - all caps long",
-			line: model.Line{
-				Items: []model.TextItem{{FontSize: 12, FontName: "Helvetica"}},
-				Text:  "THIS IS A VERY LONG ALL CAPS TEXT THAT EXCEEDS FIFTY CHARACTERS LIMIT",
+			name:    "no fallback when outline is non-empty but unmatched",
+			lines:   []model.Line{{Text: "SOME CAPS LINE"}},
+			outline: []model.OutlineItem{{Title: "Other Title"}},
+			wantTypes:  []model.LineType{model.LineTypeNormal},
+			wantLevels: []int{0},
+		},
+		{
+			name:  "whitespace normalization in matching",
+			lines: []model.Line{{Text: "Chapter  1:  Introduction"}},
+			outline: []model.OutlineItem{
+				{Title: "Chapter 1: Introduction"},
 			},
-			want: 0,
+			wantTypes:  []model.LineType{model.LineTypeHeading},
+			wantLevels: []int{1},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := headingLevel(tt.line)
-			if got != tt.want {
-				t.Errorf("headingLevel() = %d, want %d", got, tt.want)
+			got := detectHeadingsFromOutline(tt.lines, tt.outline)
+
+			if len(got) != len(tt.wantTypes) {
+				t.Fatalf("detectHeadingsFromOutline() = %d lines, want %d", len(got), len(tt.wantTypes))
+			}
+
+			for i, wantType := range tt.wantTypes {
+				if got[i].Type != wantType {
+					t.Errorf("line[%d].Type = %v, want %v (text: %q)", i, got[i].Type, wantType, tt.lines[i].Text)
+				}
+				if got[i].HeadingLevel != tt.wantLevels[i] {
+					t.Errorf("line[%d].HeadingLevel = %d, want %d (text: %q)", i, got[i].HeadingLevel, tt.wantLevels[i], tt.lines[i].Text)
+				}
 			}
 		})
 	}
@@ -133,45 +179,33 @@ func TestDetectLists(t *testing.T) {
 		wantType []model.LineType
 	}{
 		{
-			name: "bullet with •",
-			lines: []model.Line{
-				{Text: "• First item", Items: []model.TextItem{{FontSize: 12}}},
-			},
+			name:     "bullet with •",
+			lines:    []model.Line{{Text: "• First item"}},
 			wantType: []model.LineType{model.LineTypeBullet},
 		},
 		{
-			name: "bullet with dash",
-			lines: []model.Line{
-				{Text: "- Second item", Items: []model.TextItem{{FontSize: 12}}},
-			},
+			name:     "bullet with dash",
+			lines:    []model.Line{{Text: "- Second item"}},
 			wantType: []model.LineType{model.LineTypeBullet},
 		},
 		{
-			name: "numbered list 1.",
-			lines: []model.Line{
-				{Text: "1. First", Items: []model.TextItem{{FontSize: 12}}},
-			},
+			name:     "numbered list 1.",
+			lines:    []model.Line{{Text: "1. First"}},
 			wantType: []model.LineType{model.LineTypeNumbered},
 		},
 		{
-			name: "numbered list a.",
-			lines: []model.Line{
-				{Text: "a. First", Items: []model.TextItem{{FontSize: 12}}},
-			},
+			name:     "numbered list a.",
+			lines:    []model.Line{{Text: "a. First"}},
 			wantType: []model.LineType{model.LineTypeNumbered},
 		},
 		{
-			name: "normal text",
-			lines: []model.Line{
-				{Text: "Normal paragraph text.", Items: []model.TextItem{{FontSize: 12}}},
-			},
+			name:     "normal text",
+			lines:    []model.Line{{Text: "Normal paragraph text."}},
 			wantType: []model.LineType{model.LineTypeNormal},
 		},
 		{
-			name: "heading not changed to list",
-			lines: []model.Line{
-				{Text: "• Heading", Type: model.LineTypeHeading, Items: []model.TextItem{{FontSize: 12}}},
-			},
+			name:     "heading not changed to list",
+			lines:    []model.Line{{Text: "• Heading", Type: model.LineTypeHeading}},
 			wantType: []model.LineType{model.LineTypeHeading},
 		},
 	}
@@ -206,27 +240,6 @@ func TestStripBulletPrefix(t *testing.T) {
 			got := stripBulletPrefix(tt.input)
 			if got != tt.want {
 				t.Errorf("stripBulletPrefix(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
-func TestAverageFontSize(t *testing.T) {
-	tests := []struct {
-		name  string
-		items []model.TextItem
-		want  float64
-	}{
-		{"empty", nil, 0},
-		{"single", []model.TextItem{{FontSize: 12}}, 12},
-		{"average", []model.TextItem{{FontSize: 10}, {FontSize: 20}}, 15},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := averageFontSize(tt.items)
-			if got != tt.want {
-				t.Errorf("averageFontSize() = %v, want %v", got, tt.want)
 			}
 		})
 	}

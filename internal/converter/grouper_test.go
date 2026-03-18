@@ -2,169 +2,105 @@ package converter
 
 import (
 	"testing"
-
-	"github.com/shivase/pdf-to-markdown/internal/model"
 )
 
-func TestGroupIntoLines(t *testing.T) {
+func TestParseLinesWithIndentation(t *testing.T) {
 	tests := []struct {
-		name      string
-		items     []model.TextItem
-		wantLines int
-		wantTexts []string
+		name        string
+		rawLines    []string
+		wantTexts   []string
+		wantIndents []int
 	}{
 		{
-			name:      "empty input",
-			items:     nil,
-			wantLines: 0,
-			wantTexts: nil,
+			name:        "empty input",
+			rawLines:    nil,
+			wantTexts:   nil,
+			wantIndents: nil,
 		},
 		{
-			name: "single item",
-			items: []model.TextItem{
-				{Text: "Hello", X: 10, Y: 100, FontSize: 12},
-			},
-			wantLines: 1,
-			wantTexts: []string{"Hello"},
+			name:        "single line",
+			rawLines:    []string{"Hello World"},
+			wantTexts:   []string{"Hello World"},
+			wantIndents: []int{0},
 		},
 		{
-			name: "two items same Y",
-			items: []model.TextItem{
-				{Text: "World", X: 60, Y: 100, Width: 30, FontSize: 12},
-				{Text: "Hello", X: 10, Y: 100, Width: 40, FontSize: 12},
-			},
-			wantLines: 1,
-			wantTexts: []string{"Hello World"},
+			name:        "blank lines are skipped",
+			rawLines:    []string{"First", "", "  ", "\t", "Second"},
+			wantTexts:   []string{"First", "Second"},
+			wantIndents: []int{0, 0},
 		},
 		{
-			name: "two items within Y tolerance",
-			items: []model.TextItem{
-				{Text: "Line1", X: 10, Y: 100.0, FontSize: 12},
-				{Text: "same", X: 60, Y: 100.5, FontSize: 12},
-			},
-			wantLines: 1,
-			wantTexts: []string{"Line1 same"},
+			name:        "trailing whitespace is removed",
+			rawLines:    []string{"Hello   "},
+			wantTexts:   []string{"Hello"},
+			wantIndents: []int{0},
 		},
 		{
-			name: "two distinct lines",
-			items: []model.TextItem{
-				{Text: "Second", X: 10, Y: 80, FontSize: 12},
-				{Text: "First", X: 10, Y: 100, FontSize: 12},
-			},
-			wantLines: 2,
-			wantTexts: []string{"First", "Second"},
+			name:        "no indentation",
+			rawLines:    []string{"Line A", "Line B"},
+			wantTexts:   []string{"Line A", "Line B"},
+			wantIndents: []int{0, 0},
 		},
 		{
-			name: "top to bottom ordering",
-			items: []model.TextItem{
-				{Text: "C", X: 10, Y: 60, FontSize: 12},
-				{Text: "A", X: 10, Y: 100, FontSize: 12},
-				{Text: "B", X: 10, Y: 80, FontSize: 12},
-			},
-			wantLines: 3,
-			wantTexts: []string{"A", "B", "C"},
+			name:        "one level indent (4 spaces)",
+			rawLines:    []string{"Base", "    Indented"},
+			wantTexts:   []string{"Base", "Indented"},
+			wantIndents: []int{0, 1},
+		},
+		{
+			name:        "two levels indent (8 spaces)",
+			rawLines:    []string{"Base", "        Deep"},
+			wantTexts:   []string{"Base", "Deep"},
+			wantIndents: []int{0, 2},
+		},
+		{
+			name:        "all lines equally indented normalizes to 0",
+			rawLines:    []string{"    Line A", "    Line B"},
+			wantTexts:   []string{"Line A", "Line B"},
+			wantIndents: []int{0, 0},
+		},
+		{
+			name:        "relative indent from minimum",
+			rawLines:    []string{"    Base", "        Indented"},
+			wantTexts:   []string{"Base", "Indented"},
+			wantIndents: []int{0, 1},
+		},
+		{
+			name:        "mixed indent levels",
+			rawLines:    []string{"Top", "    Child", "        Grandchild", "    Child2"},
+			wantTexts:   []string{"Top", "Child", "Grandchild", "Child2"},
+			wantIndents: []int{0, 1, 2, 1},
+		},
+		{
+			name:        "normalizes multiple spaces",
+			rawLines:    []string{"Programming                          Language   Pragmatics"},
+			wantTexts:   []string{"Programming Language Pragmatics"},
+			wantIndents: []int{0},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := groupIntoLines(tt.items)
-			if len(got) != tt.wantLines {
-				t.Errorf("groupIntoLines() = %d lines, want %d", len(got), tt.wantLines)
+			got := parseLinesWithIndentation(tt.rawLines)
+
+			if tt.wantTexts == nil {
+				if got != nil {
+					t.Errorf("parseLinesWithIndentation() = %v, want nil", got)
+				}
 				return
 			}
+
+			if len(got) != len(tt.wantTexts) {
+				t.Fatalf("parseLinesWithIndentation() = %d lines, want %d", len(got), len(tt.wantTexts))
+			}
+
 			for i, wantText := range tt.wantTexts {
 				if got[i].Text != wantText {
 					t.Errorf("line[%d].Text = %q, want %q", i, got[i].Text, wantText)
 				}
-			}
-		})
-	}
-}
-
-func TestDetectIndentation(t *testing.T) {
-	tests := []struct {
-		name        string
-		lines       []model.Line
-		wantIndents []int
-	}{
-		{
-			name:        "empty lines",
-			lines:       nil,
-			wantIndents: []int{},
-		},
-		{
-			name: "no indentation",
-			lines: []model.Line{
-				{Items: []model.TextItem{{X: 10}}, Text: "A"},
-				{Items: []model.TextItem{{X: 10}}, Text: "B"},
-			},
-			wantIndents: []int{0, 0},
-		},
-		{
-			name: "one level indent",
-			lines: []model.Line{
-				{Items: []model.TextItem{{X: 10}}, Text: "A"},
-				{Items: []model.TextItem{{X: 20}}, Text: "B"},
-			},
-			wantIndents: []int{0, 1},
-		},
-		{
-			name: "two levels indent",
-			lines: []model.Line{
-				{Items: []model.TextItem{{X: 10}}, Text: "A"},
-				{Items: []model.TextItem{{X: 30}}, Text: "B"},
-			},
-			wantIndents: []int{0, 2},
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := detectIndentation(tt.lines)
-			if len(got) != len(tt.wantIndents) {
-				t.Fatalf("detectIndentation() = %d lines, want %d", len(got), len(tt.wantIndents))
-			}
-			for i, wantIndent := range tt.wantIndents {
-				if got[i].IndentLevel != wantIndent {
-					t.Errorf("line[%d].IndentLevel = %d, want %d", i, got[i].IndentLevel, wantIndent)
+				if got[i].IndentLevel != tt.wantIndents[i] {
+					t.Errorf("line[%d].IndentLevel = %d, want %d", i, got[i].IndentLevel, tt.wantIndents[i])
 				}
-			}
-		})
-	}
-}
-
-func TestJoinItemTexts(t *testing.T) {
-	tests := []struct {
-		name  string
-		items []model.TextItem
-		want  string
-	}{
-		{
-			name:  "empty",
-			items: nil,
-			want:  "",
-		},
-		{
-			name:  "single item",
-			items: []model.TextItem{{Text: "Hello"}},
-			want:  "Hello",
-		},
-		{
-			name: "adjacent items with gap",
-			items: []model.TextItem{
-				{Text: "Hello", X: 10, Width: 30},
-				{Text: "World", X: 45},
-			},
-			want: "Hello World",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := joinItemTexts(tt.items)
-			if got != tt.want {
-				t.Errorf("joinItemTexts() = %q, want %q", got, tt.want)
 			}
 		})
 	}

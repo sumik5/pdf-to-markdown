@@ -37,8 +37,8 @@ func run(args []string) error {
 
 	// Convert raw text items to structured lines
 	structuredPages := make([]model.Page, 0, len(pages))
-	for i, items := range pages {
-		page := converter.ProcessPage(items, i+1)
+	for i, lines := range pages {
+		page := converter.ProcessPage(lines, i+1, outline)
 		structuredPages = append(structuredPages, page)
 	}
 

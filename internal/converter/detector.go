@@ -13,64 +13,72 @@ var (
 	numberedPattern = regexp.MustCompile(`^\d+[.)]\s*|^[a-zA-Z][.)]\s*|^[ivxIVX]+[.)]\s*`)
 )
 
-// detectHeadings analyzes each line's font size and bold status to assign heading levels.
-// Returns a new slice with Type and HeadingLevel set.
-func detectHeadings(lines []model.Line) []model.Line {
-	result := make([]model.Line, len(lines))
-	for i, line := range lines {
-		result[i] = line
-		result[i].HeadingLevel = headingLevel(line)
-		if result[i].HeadingLevel > 0 {
-			result[i].Type = model.LineTypeHeading
-		}
+// outlineEntry はフラット化されたアウトラインエントリを表す。
+type outlineEntry struct {
+	title string
+	level int // 1-based heading level
+}
+
+// flattenOutline はネストされた OutlineItem を再帰的にフラット化する。
+// depth 0 → HeadingLevel 1, depth 1 → HeadingLevel 2, depth 2+ → HeadingLevel 3
+func flattenOutline(items []model.OutlineItem, depth int) []outlineEntry {
+	var result []outlineEntry
+	level := depth + 1
+	if level > 3 {
+		level = 3
+	}
+	for _, item := range items {
+		result = append(result, outlineEntry{title: item.Title, level: level})
+		result = append(result, flattenOutline(item.Children, depth+1)...)
 	}
 	return result
 }
 
-// headingLevel returns 1/2/3 for headings, or 0 for normal text.
-func headingLevel(line model.Line) int {
-	if len(line.Items) == 0 {
-		return 0
-	}
-
-	avgFontSize := averageFontSize(line.Items)
-	isBold := anyBold(line.Items)
-	isAllCaps := isAllUpperCase(line.Text)
-
-	switch {
-	case avgFontSize > 20 || (avgFontSize > 16 && isBold):
-		return 1
-	case avgFontSize > 16 || (avgFontSize > 14 && isBold):
-		return 2
-	case avgFontSize > 14 || (avgFontSize > 12 && isBold):
-		return 3
-	case isAllCaps && len(line.Text) < 50:
-		return 3
-	default:
-		return 0
-	}
+// normalizeText は空白を正規化して小文字に変換する。
+// pdftotext出力では単語間スペースが複数になる場合があるため、Fields で分割して再結合する。
+func normalizeText(s string) string {
+	return strings.ToLower(strings.Join(strings.Fields(s), " "))
 }
 
-// averageFontSize computes the mean font size across all items in a line.
-func averageFontSize(items []model.TextItem) float64 {
-	if len(items) == 0 {
-		return 0
-	}
-	sum := 0.0
-	for _, item := range items {
-		sum += item.FontSize
-	}
-	return sum / float64(len(items))
-}
+// detectHeadingsFromOutline はアウトライン（目次）情報と行テキストを照合して見出しを検出する。
+// マッチングは完全一致 → 含有一致（正規化後）の順で試みる。
+// アウトラインが空の場合はフォールバックとして ALL CAPS ヒューリスティックを使用する。
+func detectHeadingsFromOutline(lines []model.Line, outline []model.OutlineItem) []model.Line {
+	entries := flattenOutline(outline, 0)
+	used := make([]bool, len(entries))
 
-// anyBold returns true if any item in the line has a bold font.
-func anyBold(items []model.TextItem) bool {
-	for _, item := range items {
-		if item.IsBold() {
-			return true
+	result := make([]model.Line, len(lines))
+	for i, line := range lines {
+		result[i] = line
+
+		matched := false
+		normalizedLine := normalizeText(line.Text)
+
+		for j, entry := range entries {
+			if used[j] {
+				continue
+			}
+			normalizedTitle := normalizeText(entry.title)
+
+			if strings.EqualFold(line.Text, entry.title) ||
+				strings.Contains(normalizedLine, normalizedTitle) {
+				result[i].Type = model.LineTypeHeading
+				result[i].HeadingLevel = entry.level
+				used[j] = true
+				matched = true
+				break
+			}
+		}
+
+		// アウトラインが空の場合のフォールバック: ALL CAPS かつ短い行を h3 とみなす
+		if !matched && len(outline) == 0 {
+			if isAllUpperCase(line.Text) && len(line.Text) < 80 {
+				result[i].Type = model.LineTypeHeading
+				result[i].HeadingLevel = 3
+			}
 		}
 	}
-	return false
+	return result
 }
 
 // isAllUpperCase returns true if the text contains only uppercase letters (and no lowercase).
